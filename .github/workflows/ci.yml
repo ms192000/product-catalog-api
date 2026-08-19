@@ -132,6 +132,13 @@ jobs:
       # Built once and tagged twice: the local tag is what the stack test below
       # runs, the registry tag is what the server pulls. Building a second time
       # for the registry would mean shipping an image that was never tested.
+      # `github.event.repository.pushed_at` is a Unix epoch integer, and it is also
+      # absent on workflow_dispatch. Generating the timestamp here gives one ISO
+      # value that is correct for every trigger.
+      - name: Stamp the build time
+        id: stamp
+        run: echo "iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build the image
         uses: docker/build-push-action@v6
         with:
@@ -145,7 +152,7 @@ jobs:
           # Stamped into the image so /health can report which commit is live.
           build-args: |
             BUILD_COMMIT=${{ github.sha }}
-            BUILD_TIME=${{ github.event.repository.pushed_at }}
+            BUILD_TIME=${{ steps.stamp.outputs.iso }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

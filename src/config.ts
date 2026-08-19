@@ -57,7 +57,31 @@ export function loadConfig(): Config {
     // claiming one would be a lie.
     build: {
       commit: process.env.BUILD_COMMIT || null,
-      builtAt: process.env.BUILD_TIME || null,
+      builtAt: isoOrNull(process.env.BUILD_TIME),
     },
   };
+}
+
+/**
+ * Normalises a build timestamp to ISO 8601, or null.
+ *
+ * The value comes from whatever stamped the image, and the obvious CI field for it
+ * is a Unix epoch rather than a date string — which silently contradicts the
+ * `date-time` format the API advertises. Converting here means the endpoint keeps
+ * its contract regardless of which form the build system supplies, instead of the
+ * contract depending on a detail of the pipeline.
+ */
+function isoOrNull(raw: string | undefined): string | null {
+  if (!raw) return null;
+
+  // All digits: a Unix timestamp, in seconds or milliseconds.
+  if (/^\d+$/.test(raw)) {
+    const n = Number(raw);
+    const ms = raw.length <= 10 ? n * 1000 : n;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
