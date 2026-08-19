@@ -8,9 +8,12 @@
       name="description"
       content="Browse and exercise a live REST product catalog: 200,000 products, category and price filtering, pagination, optimistic concurrency."
     />
+    <!-- A price tag: unambiguously "product catalog", and generic iconography
+         rather than anyone's trademark. Inline as a data URI so there is no second
+         request and no 404 in the access log. -->
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f5f5f7'/%3E%3Ctext x='16' y='23' font-family='-apple-system,Helvetica,Arial' font-size='18' font-weight='700' fill='%23000' text-anchor='middle'%3E%E2%82%B9%3C/text%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0d10'/%3E%3Cpath d='M27 5v9L14 27 5 18 18 5h9z' fill='%23fff'/%3E%3Ccircle cx='22.4' cy='9.6' r='1.9' fill='%230b0d10'/%3E%3C/svg%3E"
     />
     <style>
       :root {
@@ -767,11 +770,11 @@
         <div class="keyrow">
           <span><b style="color: var(--text)">Demo API key</b> — already applied to writes</span>
           <code id="key">••••••••••••••••••••</code>
-          <button class="mini" id="key-show">Reveal</button>
-          <button class="mini" id="key-copy">Copy</button>
-          <span style="color: var(--dim); font-size: 11.5px"
-            >Reads need no key. Deletes are soft — nothing here is destructive.</span
-          >
+          <button class="mini" id="key-copy">Copy to clipboard</button>
+          <span style="color: var(--dim); font-size: 11.5px">
+            Writes below work without any setup. Copy it if you want to call the API from curl or
+            Postman. Reads need no key, and deletes are soft — nothing here is destructive.
+          </span>
         </div>
 
         <div id="panel"></div>
@@ -785,7 +788,6 @@
 
     <script>
       const API_KEY = 'f0030dad9e5aa660e59c6a2b6509243bffc4274f39bd344be828d5942d3f762b';
-      const MASK = '••••••••••••••••••••';
       const BRANDS = ['Nike', 'Jordan', 'Converse'];
       const SORTS = [
         'price:asc',
@@ -1821,18 +1823,16 @@
       );
 
       // ============================ KEY ============================
-      let shown = false;
-      $('key-show').onclick = () => {
-        shown = !shown;
-        $('key').textContent = shown ? API_KEY : MASK;
-        $('key-show').textContent = shown ? 'Hide' : 'Reveal';
-      };
+      // Copy only, never displayed. The key still exists in this page's source,
+      // because the browser has to hold it to send the header — so this is not
+      // secrecy. What it does buy is that a live credential is not sitting on
+      // screen during a screen-share, a screenshot or a demo.
       $('key-copy').onclick = async () => {
         try {
           await navigator.clipboard.writeText(API_KEY);
-          toast('API key copied');
+          toast('API key copied to clipboard');
         } catch {
-          toast('Copy failed');
+          toast('Copy failed — clipboard access was refused');
         }
       };
 

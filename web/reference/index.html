@@ -8,10 +8,11 @@
       name="description"
       content="REST API for an e-commerce product catalog: CRUD, category and price filtering, and pagination over 200,000 products."
     />
-    <!-- Inline, so there is no second request and no 404 in the access log. -->
+    <!-- Same mark as the console, so the two pages read as one site. Inline as a
+         data URI: no second request, and no 404 on every page load. -->
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111'/%3E%3Ctext x='16' y='23' font-family='-apple-system,Helvetica,Arial' font-size='18' font-weight='700' fill='%23fff' text-anchor='middle'%3E%E2%82%B9%3C/text%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0d10'/%3E%3Cpath d='M27 5v9L14 27 5 18 18 5h9z' fill='%23fff'/%3E%3Ccircle cx='22.4' cy='9.6' r='1.9' fill='%230b0d10'/%3E%3C/svg%3E"
     />
     <style>
       :root {
@@ -221,8 +222,7 @@
       <div class="key__card">
         <span class="key__label"><b>Demo API key</b> — already applied, writes are unlocked</span>
         <code class="key__value" id="key-value">••••••••••••••••••••••••</code>
-        <button class="key__btn" id="key-toggle">Reveal</button>
-        <button class="key__btn" id="key-copy">Copy</button>
+        <button class="key__btn" id="key-copy">Copy to clipboard</button>
         <p class="key__note">
           Reads need no key. <code>POST</code>, <code>PATCH</code> and <code>DELETE</code> require
           <code>X-API-Key</code>, which is pre-filled below so you can run writes immediately. It is
@@ -259,22 +259,12 @@
         hideModels: false,
       });
 
-      // --- Key reveal / copy ---------------------------------------------------
-      // Masked by default. It is still readable in source — anything a browser can
-      // send, a reader can find — so this is about not putting a live credential in
-      // plain sight, not about secrecy it cannot have.
+      // --- Key copy ------------------------------------------------------------
+      // Copy only, never displayed. It is still readable in this page's source —
+      // anything a browser can send, a reader can find — so this is not secrecy.
+      // It keeps a live credential off the screen during a demo or screenshot.
       (() => {
-        const el = document.getElementById('key-value');
-        const toggle = document.getElementById('key-toggle');
         const copy = document.getElementById('key-copy');
-        let shown = false;
-
-        toggle.addEventListener('click', () => {
-          shown = !shown;
-          el.textContent = shown ? API_KEY : '••••••••••••••••••••••••';
-          toggle.textContent = shown ? 'Hide' : 'Reveal';
-        });
-
         copy.addEventListener('click', async () => {
           try {
             await navigator.clipboard.writeText(API_KEY);
@@ -282,7 +272,7 @@
           } catch {
             copy.textContent = 'Copy failed';
           }
-          setTimeout(() => (copy.textContent = 'Copy'), 1600);
+          setTimeout(() => (copy.textContent = 'Copy to clipboard'), 1600);
         });
       })();
 
