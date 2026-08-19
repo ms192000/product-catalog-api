@@ -457,7 +457,22 @@ paths:
                 type: object
                 properties:
                   status: { type: string, example: ok }
-                  uptime: { type: number, description: Seconds since start }
+                  uptimeSeconds: { type: integer, description: Seconds since start, example: 3600 }
+                  startedAt: { type: string, format: date-time }
+                  build:
+                    type: object
+                    description: |
+                      Which artefact is running. Stamped into the image at build
+                      time, so it cannot drift from what it describes. `commit` is
+                      also the image tag, which makes "is my deploy actually live?"
+                      answerable without shell access to the host.
+                    properties:
+                      commit:
+                        type: string
+                        nullable: true
+                        description: Null when running from source rather than a built image.
+                        example: ecf945861debc143598aff74ca9c7a142f4019f2
+                      builtAt: { type: string, nullable: true, format: date-time }
 
   /ready:
     get:

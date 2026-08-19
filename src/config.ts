@@ -16,6 +16,19 @@ export interface Config {
   rateLimit: number;
   /** When set, writes require `x-api-key`. Unset = open, for local exploration. */
   apiKey: string | undefined;
+  /**
+   * Which build this process is.
+   *
+   * Baked into the image at build time rather than read from a file, so it cannot
+   * drift from the artefact it describes. Exposed on `/health` because "which
+   * commit is actually live?" is the first question during an incident, and
+   * answering it by SSHing in to compare tags is slow and error-prone.
+   */
+  build: {
+    /** Commit the image was built from. Doubles as the image tag. */
+    commit: string | null;
+    builtAt: string | null;
+  };
 }
 
 function intFromEnv(name: string, fallback: number): number {
@@ -40,5 +53,11 @@ export function loadConfig(): Config {
     cacheMaxAgeSeconds: intFromEnv('CACHE_MAX_AGE', 60),
     rateLimit: intFromEnv('RATE_LIMIT', 600),
     apiKey: process.env.API_KEY,
+    // Null outside a built image — running from source has no commit baked in, and
+    // claiming one would be a lie.
+    build: {
+      commit: process.env.BUILD_COMMIT || null,
+      builtAt: process.env.BUILD_TIME || null,
+    },
   };
 }

@@ -113,6 +113,16 @@ async function readChecks() {
     (health.headers.get('content-type') ?? '').includes('application/json'),
   );
 
+  const healthBody = await health.json().catch(() => null);
+  // The field must always be present; its value is null when running from source
+  // rather than a built image, which is a legitimate state.
+  check('/health reports which build is running', healthBody?.build !== undefined);
+  if (healthBody?.build?.commit) {
+    console.log(
+      `        build ${healthBody.build.commit.slice(0, 12)} @ ${healthBody.build.builtAt ?? 'unknown'}`,
+    );
+  }
+
   const listRes = await req(`${BASE}/api/v1/products?limit=5`);
   const list = await listRes.json();
   check('listing returns 200', listRes.status === 200);

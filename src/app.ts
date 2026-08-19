@@ -50,8 +50,19 @@ export function createApp({ db, config = loadConfig() }: AppOptions): Express {
    * asking: can this instance serve traffic right now. Neither is rate limited;
    * throttling a health check is how a busy service removes itself from rotation.
    */
+  // Captured once, at startup, rather than derived per request.
+  const startedAt = new Date().toISOString();
+
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', uptimeSeconds: Math.round(process.uptime()) });
+    res.json({
+      status: 'ok',
+      uptimeSeconds: Math.round(process.uptime()),
+      startedAt,
+      // Identifies the running artefact. `commit` is also the image tag, so this
+      // answers "is the deploy I just triggered actually live?" without shell
+      // access to the host.
+      build: config.build,
+    });
   });
 
   app.get('/ready', asyncReady(db, service));

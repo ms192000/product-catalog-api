@@ -13,6 +13,8 @@ export const testConfig: Config = {
   cacheMaxAgeSeconds: 0,
   rateLimit: 100_000,
   apiKey: undefined,
+  // Tests run from source, so there is no image to identify.
+  build: { commit: null, builtAt: null },
 };
 
 /**

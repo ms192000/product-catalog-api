@@ -18,6 +18,14 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Which commit this image was built from, surfaced on /health.
+#
+# Declared in the runtime stage so it becomes an ENV the process can read. Placed
+# after the dependency install below would invalidate that cache on every commit,
+# so it sits here and the ENV lines are pushed to the end of the file instead.
+ARG BUILD_COMMIT=""
+ARG BUILD_TIME=""
+
 COPY package.json package-lock.json ./
 # --omit=dev drops typescript, vitest and eslint from the image.
 RUN npm ci --omit=dev && npm cache clean --force
@@ -37,5 +45,10 @@ EXPOSE 3000
 # never routes traffic to a process whose database is not answering.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+# Last, so a new commit only invalidates this layer rather than the dependency
+# install above. These change on every build by definition.
+ENV BUILD_COMMIT=${BUILD_COMMIT} \
+    BUILD_TIME=${BUILD_TIME}
 
 CMD ["node", "dist/server.js"]
