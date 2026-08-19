@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Product Catalog API</title>
+    <meta
+      name="description"
+      content="REST API for an e-commerce product catalog: CRUD, category and price filtering, and pagination over 200,000 products."
+    />
+    <!-- Inline, so there is no second request and no 404 in the access log. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111'/%3E%3Ctext x='16' y='23' font-family='-apple-system,Helvetica,Arial' font-size='18' font-weight='700' fill='%23fff' text-anchor='middle'%3E%E2%82%B9%3C/text%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --ink: #0d0d0d;
+        --muted: #6e6e73;
+        --line: #e5e5e7;
+        --bg: #fff;
+        --accent: #0071e3;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: inherit;
+      }
+
+      .bar {
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.86);
+        backdrop-filter: saturate(180%) blur(14px);
+        position: sticky;
+        top: 0;
+        z-index: 50;
+      }
+      .bar__inner {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-right: auto;
+      }
+      .brand strong {
+        font-size: 16px;
+        letter-spacing: -0.01em;
+        font-weight: 600;
+      }
+      .brand span {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .live {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .live b {
+        color: var(--ink);
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #b0b0b5;
+        margin-right: 6px;
+        vertical-align: 1px;
+      }
+      .dot--up {
+        background: #34c759;
+      }
+      .dot--down {
+        background: #ff3b30;
+      }
+
+      .links {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .links a {
+        font-size: 12.5px;
+        font-weight: 500;
+        text-decoration: none;
+        padding: 6px 12px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        white-space: nowrap;
+      }
+      .links a:hover {
+        background: #f5f5f7;
+      }
+      .links a.solid {
+        background: var(--ink);
+        color: #fff;
+        border-color: var(--ink);
+      }
+      .links a.solid:hover {
+        background: #2c2c2e;
+      }
+
+      /* Key strip ------------------------------------------------------------ */
+      .key {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 14px 24px 0;
+      }
+      .key__card {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 13px 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        background: #fbfbfd;
+      }
+      .key__label {
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .key__label b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      code.key__value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12.5px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 9px;
+        letter-spacing: 0.02em;
+      }
+      .key__btn {
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 500;
+        padding: 6px 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 7px;
+        cursor: pointer;
+      }
+      .key__btn:hover {
+        background: #f5f5f7;
+      }
+      .key__note {
+        font-size: 12px;
+        color: var(--muted);
+        flex-basis: 100%;
+        line-height: 1.5;
+      }
+
+      #app {
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+
+      @media (max-width: 760px) {
+        .live {
+          order: 3;
+          flex-basis: 100%;
+        }
+        .brand {
+          margin-right: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="bar">
+      <div class="bar__inner">
+        <div class="brand">
+          <strong>Product Catalog API</strong>
+          <span>CRUD, filtering and pagination over 200,000 products</span>
+        </div>
+        <div class="live">
+          <span><span class="dot" id="dot"></span><b id="f-status">checking</b></span>
+          <span>latency <b id="f-latency">—</b></span>
+          <span>cache <b id="f-cache">—</b></span>
+        </div>
+        <nav class="links">
+          <a class="solid" href="/">← Live console</a>
+          <a href="https://github.com/ms192000/product-catalog-api">Source</a>
+          <a href="/openapi.yaml">openapi.yaml</a>
+          <a href="/ready">/ready</a>
+        </nav>
+      </div>
+    </header>
+
+    <section class="key">
+      <div class="key__card">
+        <span class="key__label"><b>Demo API key</b> — already applied, writes are unlocked</span>
+        <code class="key__value" id="key-value">••••••••••••••••••••••••</code>
+        <button class="key__btn" id="key-toggle">Reveal</button>
+        <button class="key__btn" id="key-copy">Copy</button>
+        <p class="key__note">
+          Reads need no key. <code>POST</code>, <code>PATCH</code> and <code>DELETE</code> require
+          <code>X-API-Key</code>, which is pre-filled below so you can run writes immediately. It is
+          a demo key on demo data: rate limited, deletes are soft, and it is rotated by updating one
+          GitHub secret and pushing.
+        </p>
+      </div>
+    </section>
+
+    <div id="app"></div>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.65.1/dist/browser/standalone.js"
+      integrity="sha256-SCWTngiQkGGlL3F6/Uwt5GlDP1KM2JQH4sKytYzRE+0="
+      crossorigin="anonymous"
+    ></script>
+    <script>
+      const API_KEY = 'f0030dad9e5aa660e59c6a2b6509243bffc4274f39bd344be828d5942d3f762b';
+
+      Scalar.createApiReference('#app', {
+        url: '/openapi.yaml',
+        // The page already has a header, so Scalar's would be a second one.
+        showSidebar: true,
+        hideDarkModeToggle: false,
+        darkMode: false,
+        // Pre-applied so a reviewer can execute a write without hunting for a key.
+        authentication: {
+          preferredSecurityScheme: 'ApiKeyAuth',
+          securitySchemes: {
+            ApiKeyAuth: { value: API_KEY },
+          },
+        },
+        defaultOpenAllTags: false,
+        hideModels: false,
+      });
+
+      // --- Key reveal / copy ---------------------------------------------------
+      // Masked by default. It is still readable in source — anything a browser can
+      // send, a reader can find — so this is about not putting a live credential in
+      // plain sight, not about secrecy it cannot have.
+      (() => {
+        const el = document.getElementById('key-value');
+        const toggle = document.getElementById('key-toggle');
+        const copy = document.getElementById('key-copy');
+        let shown = false;
+
+        toggle.addEventListener('click', () => {
+          shown = !shown;
+          el.textContent = shown ? API_KEY : '••••••••••••••••••••••••';
+          toggle.textContent = shown ? 'Hide' : 'Reveal';
+        });
+
+        copy.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(API_KEY);
+            copy.textContent = 'Copied';
+          } catch {
+            copy.textContent = 'Copy failed';
+          }
+          setTimeout(() => (copy.textContent = 'Copy'), 1600);
+        });
+      })();
+
+      // --- Live status ---------------------------------------------------------
+      // Shows the caching claim rather than asserting it: reload and the cache
+      // flips MISS to HIT.
+      (async () => {
+        const set = (id, v) => (document.getElementById(id).textContent = v);
+        const dot = document.getElementById('dot');
+        try {
+          const ready = await fetch('/ready', { signal: AbortSignal.timeout(8000) });
+          const body = await ready.json();
+          const ok = body.status === 'ready';
+          set('f-status', ok ? `${Number(body.products).toLocaleString()} products` : 'degraded');
+          dot.className = 'dot ' + (ok ? 'dot--up' : 'dot--down');
+
+          const t0 = performance.now();
+          const res = await fetch('/api/v1/products?category=Running&limit=5', {
+            signal: AbortSignal.timeout(8000),
+          });
+          set('f-latency', Math.round(performance.now() - t0) + ' ms');
+          set('f-cache', res.headers.get('x-cache-status') ?? 'direct');
+        } catch {
+          set('f-status', 'unreachable');
+          dot.className = 'dot dot--down';
+        }
+      })();
+    </script>
+  </body>
+</html>

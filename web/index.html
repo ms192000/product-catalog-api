@@ -1,0 +1,1801 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Product Catalog API — live console</title>
+    <meta
+      name="description"
+      content="Browse and exercise a live REST product catalog: 200,000 products, category and price filtering, pagination, optimistic concurrency."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f5f5f7'/%3E%3Ctext x='16' y='23' font-family='-apple-system,Helvetica,Arial' font-size='18' font-weight='700' fill='%23000' text-anchor='middle'%3E%E2%82%B9%3C/text%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #12151a;
+        --panel-2: #171b21;
+        --line: #242a33;
+        --line-2: #2e3542;
+        --text: #e6e9ee;
+        --muted: #8b94a3;
+        --dim: #626b7a;
+        --accent: #4d9fff;
+        --get: #5ac8fa;
+        --post: #32d74b;
+        --patch: #ffd60a;
+        --del: #ff6961;
+        --ok: #32d74b;
+        --warn: #ffd60a;
+        --err: #ff6961;
+        --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, sans-serif;
+        font-size: 14px;
+        -webkit-font-smoothing: antialiased;
+        display: flex;
+        flex-direction: column;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      select,
+      input,
+      textarea {
+        font: inherit;
+        color: var(--text);
+      }
+
+      /* ---------- Top bar ---------- */
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 0 18px;
+        height: 52px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        flex-shrink: 0;
+        flex-wrap: wrap;
+      }
+      .logo {
+        display: flex;
+        align-items: baseline;
+        gap: 9px;
+        margin-right: auto;
+      }
+      .logo b {
+        font-size: 15px;
+        letter-spacing: -0.01em;
+      }
+      .logo span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .stat {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .stat b {
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
+      .pill {
+        font-size: 12px;
+        padding: 5px 10px;
+        border: 1px solid var(--line-2);
+        border-radius: 6px;
+        color: var(--muted);
+        background: var(--panel-2);
+      }
+      .pill:hover {
+        border-color: var(--dim);
+        text-decoration: none;
+      }
+      .led {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--dim);
+      }
+      .led.up {
+        background: var(--ok);
+        box-shadow: 0 0 7px rgba(50, 215, 75, 0.6);
+      }
+      .led.down {
+        background: var(--err);
+      }
+
+      /* ---------- Layout ---------- */
+      .shell {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+      .side {
+        width: 262px;
+        flex-shrink: 0;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+        overflow-y: auto;
+        padding: 12px 0 30px;
+      }
+      .main {
+        flex: 1;
+        min-width: 0;
+        overflow-y: auto;
+        padding: 18px 20px 48px;
+      }
+      .side h4 {
+        margin: 15px 16px 7px;
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--dim);
+        font-weight: 600;
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        width: 100%;
+        text-align: left;
+        background: none;
+        border: 0;
+        border-left: 2px solid transparent;
+        padding: 8px 16px;
+        color: var(--muted);
+      }
+      .item:hover {
+        background: var(--panel-2);
+        color: var(--text);
+      }
+      .item.on {
+        background: var(--panel-2);
+        color: var(--text);
+        border-left-color: var(--accent);
+      }
+      .verb {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        font-weight: 700;
+        width: 44px;
+        flex-shrink: 0;
+      }
+      .verb.GET {
+        color: var(--get);
+      }
+      .verb.POST {
+        color: var(--post);
+      }
+      .verb.PATCH {
+        color: var(--patch);
+      }
+      .verb.DELETE {
+        color: var(--del);
+      }
+      .verb.RUN {
+        color: var(--accent);
+      }
+      .verb.VIEW {
+        color: #c792ea;
+      }
+      .item small {
+        font-size: 12.5px;
+        line-height: 1.3;
+      }
+
+      h1.lead {
+        margin: 0 0 4px;
+        font-size: 19px;
+        letter-spacing: -0.015em;
+      }
+      p.sub {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+        max-width: 82ch;
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 0.92em;
+      }
+
+      /* ---------- Cards ---------- */
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .card {
+        text-align: left;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 13px 14px;
+        transition:
+          border-color 0.15s,
+          transform 0.15s;
+      }
+      .card:hover {
+        border-color: var(--accent);
+        transform: translateY(-1px);
+      }
+      .card b {
+        display: block;
+        font-size: 13px;
+        margin-bottom: 5px;
+      }
+      .card span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .card .run {
+        display: inline-block;
+        margin-top: 9px;
+        font-size: 11px;
+        color: var(--accent);
+      }
+
+      /* ---------- Panels ---------- */
+      .box {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        margin-bottom: 16px;
+      }
+      .box__head {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+      .box__title {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin-right: auto;
+      }
+      .why {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12.5px;
+        line-height: 1.6;
+        background: rgba(77, 159, 255, 0.045);
+      }
+      .why b {
+        color: var(--text);
+      }
+
+      /* ---------- Filters ---------- */
+      .filters {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+        gap: 11px;
+        padding: 14px;
+      }
+      .f label {
+        display: block;
+        font-size: 11px;
+        color: var(--dim);
+        margin-bottom: 5px;
+        font-family: var(--mono);
+      }
+      .f select,
+      .f input {
+        width: 100%;
+        background: var(--bg);
+        border: 1px solid var(--line-2);
+        border-radius: 6px;
+        padding: 7px 9px;
+        font-size: 12.5px;
+        font-family: var(--mono);
+      }
+      .f select:focus,
+      .f input:focus {
+        outline: 0;
+        border-color: var(--accent);
+      }
+      .f .note {
+        display: block;
+        margin-top: 4px;
+        font-size: 10.5px;
+        color: var(--dim);
+      }
+
+      .urlline {
+        padding: 10px 14px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        background: var(--bg);
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--muted);
+        overflow-x: auto;
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .urlline b {
+        color: var(--get);
+      }
+
+      /* ---------- Table ---------- */
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+      thead th {
+        text-align: left;
+        padding: 9px 12px;
+        color: var(--dim);
+        font-weight: 600;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel-2);
+        position: sticky;
+        top: 0;
+      }
+      tbody td {
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: middle;
+      }
+      tbody tr:hover {
+        background: var(--panel-2);
+      }
+      td.num {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .tag {
+        font-size: 10.5px;
+        padding: 2px 7px;
+        border-radius: 4px;
+        border: 1px solid var(--line-2);
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .tag.active {
+        color: var(--ok);
+        border-color: rgba(50, 215, 75, 0.35);
+      }
+      .tag.draft {
+        color: var(--warn);
+        border-color: rgba(255, 214, 10, 0.35);
+      }
+      .tag.archived {
+        color: var(--dim);
+      }
+      .tag.oos {
+        color: var(--err);
+        border-color: rgba(255, 105, 97, 0.35);
+      }
+      .acts {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+      }
+      .act {
+        font-size: 10.5px;
+        padding: 4px 8px;
+        background: var(--panel-2);
+        border: 1px solid var(--line-2);
+        border-radius: 5px;
+        color: var(--muted);
+      }
+      .act:hover {
+        color: var(--text);
+        border-color: var(--dim);
+      }
+      .act.g:hover {
+        border-color: var(--get);
+        color: var(--get);
+      }
+      .act.p:hover {
+        border-color: var(--patch);
+        color: var(--patch);
+      }
+      .act.d:hover {
+        border-color: var(--del);
+        color: var(--del);
+      }
+
+      .pager {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border-top: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+        flex-wrap: wrap;
+      }
+      .pager b {
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ---------- Request builder ---------- */
+      .req__verb {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: var(--panel-2);
+        border: 1px solid var(--line-2);
+      }
+      .req__url {
+        flex: 1;
+        min-width: 200px;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        background: var(--bg);
+        border: 1px solid var(--line-2);
+        border-radius: 6px;
+        padding: 8px 11px;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      .send {
+        background: var(--accent);
+        color: #04121f;
+        font-weight: 650;
+        border: 0;
+        border-radius: 6px;
+        padding: 9px 22px;
+        font-size: 13px;
+      }
+      .send:hover {
+        background: #6fb2ff;
+      }
+      .send:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .fields {
+        padding: 6px 14px 14px;
+      }
+      .field {
+        display: grid;
+        grid-template-columns: 154px 1fr;
+        gap: 10px;
+        align-items: start;
+        padding: 9px 0;
+        border-bottom: 1px dashed var(--line);
+      }
+      .field:last-child {
+        border-bottom: 0;
+      }
+      .field > label {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--muted);
+        padding-top: 8px;
+      }
+      .field input,
+      .field select,
+      .field textarea {
+        width: 100%;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        background: var(--bg);
+        border: 1px solid var(--line-2);
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      .field input:focus,
+      .field select:focus,
+      .field textarea:focus {
+        outline: 0;
+        border-color: var(--accent);
+      }
+      .field textarea {
+        min-height: 128px;
+        resize: vertical;
+        line-height: 1.55;
+      }
+      .field .hint {
+        display: block;
+        margin-top: 5px;
+        color: var(--dim);
+        font-size: 11.5px;
+        line-height: 1.5;
+      }
+      .field .hint b {
+        color: var(--muted);
+      }
+
+      /* ---------- Response ---------- */
+      .res__head {
+        display: flex;
+        gap: 13px;
+        align-items: center;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .res__head b {
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
+      .code {
+        font-family: var(--mono);
+        font-weight: 700;
+        padding: 3px 9px;
+        border-radius: 5px;
+        font-size: 12px;
+      }
+      .code.ok {
+        background: rgba(50, 215, 75, 0.14);
+        color: var(--ok);
+      }
+      .code.warn {
+        background: rgba(255, 214, 10, 0.14);
+        color: var(--warn);
+      }
+      .code.err {
+        background: rgba(255, 105, 97, 0.14);
+        color: var(--err);
+      }
+      pre.out {
+        margin: 0;
+        padding: 14px;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.62;
+        overflow: auto;
+        max-height: 440px;
+        white-space: pre;
+      }
+      .k {
+        color: #7fb5ff;
+      }
+      .s {
+        color: #9be89b;
+      }
+      .n {
+        color: #ffcf6b;
+      }
+      .b {
+        color: #c792ea;
+      }
+      .nul {
+        color: var(--dim);
+      }
+      .empty {
+        padding: 32px 14px;
+        text-align: center;
+        color: var(--dim);
+        font-size: 13px;
+      }
+      .step {
+        border-bottom: 1px solid var(--line);
+      }
+      .step__note {
+        padding: 0 14px 11px;
+        color: var(--muted);
+        font-size: 12.5px;
+        line-height: 1.6;
+      }
+      .step__note b {
+        color: var(--text);
+      }
+
+      .keyrow {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        flex-wrap: wrap;
+        margin: 0 0 16px;
+        padding: 11px 13px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .keyrow code {
+        background: var(--bg);
+        border: 1px solid var(--line-2);
+        border-radius: 5px;
+        padding: 5px 9px;
+        color: var(--text);
+      }
+      .mini {
+        font-size: 11.5px;
+        padding: 5px 10px;
+        background: var(--panel-2);
+        border: 1px solid var(--line-2);
+        border-radius: 5px;
+      }
+      .mini:hover {
+        border-color: var(--dim);
+      }
+      .toast {
+        position: fixed;
+        bottom: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--panel-2);
+        border: 1px solid var(--line-2);
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 12.5px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s;
+        z-index: 99;
+      }
+      .toast.on {
+        opacity: 1;
+      }
+
+      @media (max-width: 900px) {
+        .side {
+          display: none;
+        }
+        .field {
+          grid-template-columns: 1fr;
+        }
+        .field > label {
+          padding-top: 0;
+        }
+        table {
+          font-size: 11.5px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="logo">
+        <b>Product Catalog API</b>
+        <span>Nike, Inc. catalog</span>
+      </div>
+      <div class="stat"><span class="led" id="led"></span> <b id="s-count">—</b> products</div>
+      <div class="stat">p50 <b id="s-lat">—</b></div>
+      <div class="stat">cache <b id="s-cache">—</b></div>
+      <a class="pill" href="/reference/">Spec reference</a>
+      <a class="pill" href="/openapi.yaml">openapi.yaml</a>
+      <a class="pill" href="https://github.com/ms192000/product-catalog-api">Source</a>
+    </header>
+
+    <div class="shell">
+      <aside class="side">
+        <h4>Browse</h4>
+        <div id="nav-browse"></div>
+        <h4>Guided scenarios</h4>
+        <div id="nav-scenarios"></div>
+        <h4>Endpoints</h4>
+        <div id="nav-endpoints"></div>
+      </aside>
+
+      <main class="main">
+        <h1 class="lead" id="title">Catalog</h1>
+        <p class="sub" id="blurb"></p>
+
+        <div class="keyrow">
+          <span><b style="color: var(--text)">Demo API key</b> — already applied to writes</span>
+          <code id="key">••••••••••••••••••••</code>
+          <button class="mini" id="key-show">Reveal</button>
+          <button class="mini" id="key-copy">Copy</button>
+          <span style="color: var(--dim); font-size: 11.5px"
+            >Reads need no key. Deletes are soft — nothing here is destructive.</span
+          >
+        </div>
+
+        <div id="panel"></div>
+        <div class="box" id="res">
+          <div class="empty">Responses appear here.</div>
+        </div>
+      </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+      const API_KEY = 'f0030dad9e5aa660e59c6a2b6509243bffc4274f39bd344be828d5942d3f762b';
+      const MASK = '••••••••••••••••••••';
+      const BRANDS = ['Nike', 'Jordan', 'Converse'];
+      const SORTS = [
+        'price:asc',
+        'price:desc',
+        'name:asc',
+        'name:desc',
+        'createdAt:desc',
+        'createdAt:asc',
+        'relevance:desc',
+      ];
+      const STATUSES = ['active', 'draft', 'archived'];
+
+      const $ = (id) => document.getElementById(id);
+      const el = (t, c, h) => {
+        const n = document.createElement(t);
+        if (c) n.className = c;
+        if (h !== undefined) n.innerHTML = h;
+        return n;
+      };
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+        );
+      const inr = (minor) => '₹' + (Number(minor) / 100).toLocaleString('en-IN');
+
+      let facets = null;
+      let toastTimer;
+      function toast(msg) {
+        $('toast').textContent = msg;
+        $('toast').classList.add('on');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => $('toast').classList.remove('on'), 2200);
+      }
+
+      function paint(value) {
+        const json = JSON.stringify(value, null, 2) ?? '';
+        return esc(json).replace(
+          /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?)/g,
+          (m) => {
+            if (/^"/.test(m))
+              return /:$/.test(m) ? `<span class="k">${m}</span>` : `<span class="s">${m}</span>`;
+            if (/true|false/.test(m)) return `<span class="b">${m}</span>`;
+            if (/null/.test(m)) return `<span class="nul">${m}</span>`;
+            return `<span class="n">${m}</span>`;
+          },
+        );
+      }
+      const codeClass = (s) => (s >= 200 && s < 300 ? 'ok' : s >= 400 && s < 500 ? 'warn' : 'err');
+
+      async function call(method, path, { body, headers = {} } = {}) {
+        const t0 = performance.now();
+        let res, text;
+        try {
+          res = await fetch(path, {
+            method,
+            headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...headers },
+            body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
+            signal: AbortSignal.timeout(15000),
+          });
+          text = await res.text();
+        } catch (e) {
+          return {
+            status: 0,
+            ms: Math.round(performance.now() - t0),
+            error: e.message,
+            method,
+            path,
+          };
+        }
+        let json = null;
+        try {
+          json = text ? JSON.parse(text) : null;
+        } catch {}
+        return {
+          status: res.status,
+          ms: Math.round(performance.now() - t0),
+          bytes: new Blob([text]).size,
+          etag: res.headers.get('etag'),
+          cache: res.headers.get('x-cache-status'),
+          cc: res.headers.get('cache-control'),
+          json,
+          text,
+          method,
+          path,
+        };
+      }
+
+      function curlFor(method, path, headers, body) {
+        const parts = [`curl -X ${method} '${location.origin}${path}'`];
+        Object.entries(headers ?? {}).forEach(([k, v]) =>
+          parts.push(`  -H '${k}: ${k.toLowerCase() === 'x-api-key' ? '$API_KEY' : v}'`),
+        );
+        if (body) parts.push(`  -d '${typeof body === 'string' ? body : JSON.stringify(body)}'`);
+        return parts.join(' \\\n');
+      }
+
+      // ============================ CATALOG ============================
+      const cat = {
+        category: '',
+        brand: '',
+        minRupees: '',
+        maxRupees: '',
+        sort: 'price:asc',
+        status: 'active',
+        inStockOnly: '',
+        q: '',
+        limit: 20,
+        offset: 0,
+        total: null,
+        rows: [],
+        lastUrl: '',
+      };
+
+      function catalogQuery() {
+        const p = new URLSearchParams();
+        if (cat.category) p.set('category', cat.category);
+        if (cat.brand) p.set('brand', cat.brand);
+        if (cat.minRupees !== '')
+          p.set('minPrice', String(Math.round(Number(cat.minRupees) * 100)));
+        if (cat.maxRupees !== '')
+          p.set('maxPrice', String(Math.round(Number(cat.maxRupees) * 100)));
+        if (cat.q) p.set('q', cat.q);
+        if (cat.inStockOnly) p.set('inStockOnly', 'true');
+        if (cat.status) p.set('status', cat.status);
+        p.set('sort', cat.sort);
+        p.set('limit', String(cat.limit));
+        p.set('offset', String(cat.offset));
+        p.set('withTotal', 'true');
+        return '/api/v1/products?' + p.toString();
+      }
+
+      function selectFor(label, value, options, onChange, note, allowBlank = true) {
+        const wrap = el('div', 'f');
+        wrap.appendChild(el('label', null, label));
+        const s = el('select');
+        if (allowBlank) s.appendChild(el('option', null, '— any —'));
+        options.forEach((o) => {
+          // Options may be primitives (10, 'Nike') or {value,label} pairs. Testing
+          // for string alone treated numbers as objects and rendered "undefined".
+          const isPair = o !== null && typeof o === 'object';
+          const text = isPair ? o.label : o;
+          const val = isPair ? o.value : o;
+          const opt = el('option', null, esc(text));
+          opt.value = val;
+          if (String(val) === String(value)) opt.selected = true;
+          s.appendChild(opt);
+        });
+        s.onchange = () => onChange(s.value);
+        wrap.appendChild(s);
+        if (note) wrap.appendChild(el('span', 'note', note));
+        return wrap;
+      }
+
+      function inputFor(label, value, onChange, note, placeholder) {
+        const wrap = el('div', 'f');
+        wrap.appendChild(el('label', null, label));
+        const i = el('input');
+        i.value = value ?? '';
+        if (placeholder) i.placeholder = placeholder;
+        i.onchange = () => onChange(i.value.trim());
+        i.onkeydown = (e) => {
+          if (e.key === 'Enter') {
+            onChange(i.value.trim());
+          }
+        };
+        wrap.appendChild(i);
+        if (note) wrap.appendChild(el('span', 'note', note));
+        return wrap;
+      }
+
+      async function loadFacets() {
+        if (facets) return facets;
+        const r = await call('GET', '/api/v1/products/facets');
+        facets = r.json?.data?.categories ?? [];
+        return facets;
+      }
+
+      async function showCatalog(resetOffset = false) {
+        if (resetOffset) cat.offset = 0;
+        markActive('Catalog');
+        $('title').textContent = 'Catalog';
+        $('blurb').innerHTML =
+          'Every filter here is a real query parameter, and the exact request is shown above the results — so the browsing <em>is</em> the documentation. Use the buttons on any row to load that product into a request, with its <code>id</code> and current <code>ETag</code> filled in for you.';
+
+        await loadFacets();
+        const panel = $('panel');
+        panel.innerHTML = '';
+
+        const box = el('div', 'box');
+        const head = el('div', 'box__head');
+        head.appendChild(el('span', 'box__title', 'Filters — these map 1:1 onto query parameters'));
+        const reset = el('button', 'mini', 'Reset');
+        reset.onclick = () => {
+          Object.assign(cat, {
+            category: '',
+            brand: '',
+            minRupees: '',
+            maxRupees: '',
+            q: '',
+            inStockOnly: '',
+            status: 'active',
+            sort: 'price:asc',
+            offset: 0,
+          });
+          showCatalog();
+        };
+        head.appendChild(reset);
+        box.appendChild(head);
+
+        const f = el('div', 'filters');
+        f.appendChild(
+          selectFor(
+            'category',
+            cat.category,
+            facets.map((c) => ({
+              value: c.value,
+              label: `${c.value} (${c.count.toLocaleString()})`,
+            })),
+            (v) => {
+              cat.category = v;
+              showCatalog(true);
+            },
+            'Live values from /facets',
+          ),
+        );
+        f.appendChild(
+          selectFor(
+            'brand',
+            cat.brand,
+            BRANDS,
+            (v) => {
+              cat.brand = v;
+              showCatalog(true);
+            },
+            'Nike, Inc. brands',
+          ),
+        );
+        f.appendChild(
+          inputFor(
+            'minPrice (₹)',
+            cat.minRupees,
+            (v) => {
+              cat.minRupees = v;
+              showCatalog(true);
+            },
+            cat.minRupees !== ''
+              ? `sends ${Math.round(Number(cat.minRupees) * 100)} minor units`
+              : 'rupees → minor units',
+            'e.g. 5000',
+          ),
+        );
+        f.appendChild(
+          inputFor(
+            'maxPrice (₹)',
+            cat.maxRupees,
+            (v) => {
+              cat.maxRupees = v;
+              showCatalog(true);
+            },
+            cat.maxRupees !== ''
+              ? `sends ${Math.round(Number(cat.maxRupees) * 100)} minor units`
+              : 'inclusive bound',
+            'e.g. 15000',
+          ),
+        );
+        f.appendChild(
+          selectFor(
+            'sort',
+            cat.sort,
+            SORTS,
+            (v) => {
+              cat.sort = v;
+              showCatalog(true);
+            },
+            'field:direction',
+            false,
+          ),
+        );
+        f.appendChild(
+          selectFor(
+            'status',
+            cat.status,
+            STATUSES,
+            (v) => {
+              cat.status = v;
+              showCatalog(true);
+            },
+            'defaults to active',
+          ),
+        );
+        f.appendChild(
+          selectFor(
+            'inStockOnly',
+            cat.inStockOnly,
+            [{ value: 'true', label: 'true' }],
+            (v) => {
+              cat.inStockOnly = v;
+              showCatalog(true);
+            },
+            'stock > 0',
+          ),
+        );
+        f.appendChild(
+          inputFor(
+            'q (full text)',
+            cat.q,
+            (v) => {
+              cat.q = v;
+              showCatalog(true);
+            },
+            'name, brand, category, description',
+            'e.g. pegasus',
+          ),
+        );
+        f.appendChild(
+          selectFor(
+            'limit',
+            cat.limit,
+            [10, 20, 50, 100],
+            (v) => {
+              cat.limit = Number(v);
+              showCatalog(true);
+            },
+            'clamped to 100',
+            false,
+          ),
+        );
+        box.appendChild(f);
+
+        const url = catalogQuery();
+        cat.lastUrl = url;
+
+        // A listing is cached for 60s. Straight after a write that is confusing:
+        // you change stock, the table still shows the old number, and it reads as
+        // a bug rather than as the cache doing its job. So a write arms one
+        // cache-bypassing read and says so, instead of silently lying.
+        const bypass = cat.bustNext || cat.alwaysFresh;
+        const readHeaders = bypass ? { 'cache-control': 'no-cache' } : {};
+
+        const line = el('div', 'urlline');
+        line.appendChild(el('span', null, `<b>GET</b> ${esc(url)}`));
+        const cp = el('button', 'mini', 'Copy cURL');
+        cp.style.marginLeft = 'auto';
+        cp.onclick = async () => {
+          await navigator.clipboard.writeText(curlFor('GET', url, readHeaders));
+          toast('cURL copied');
+        };
+        line.appendChild(cp);
+        box.appendChild(line);
+
+        if (bypass) {
+          box.appendChild(
+            el(
+              'div',
+              'why',
+              cat.bustNext
+                ? 'Sending <code>Cache-Control: no-cache</code> for this one read, because you just wrote. nginx honours it via <code>proxy_cache_bypass</code>, so you see your change immediately rather than waiting out the 60-second TTL. Without it, a cached listing is up to a minute stale — a deliberate tradeoff for a catalog, not a defect.'
+                : 'Fresh reads are on: every request sends <code>Cache-Control: no-cache</code>, so nothing is served from the proxy cache. Turn it off to see caching in effect.',
+            ),
+          );
+        }
+
+        const holder = el('div');
+        holder.innerHTML = '<div class="empty">Loading…</div>';
+        box.appendChild(holder);
+        panel.appendChild(box);
+
+        const r = await call('GET', url, { headers: readHeaders });
+        cat.bustNext = false;
+        cat.rows = r.json?.data ?? [];
+        cat.total = r.json?.page?.total ?? null;
+
+        if (!cat.rows.length) {
+          holder.innerHTML = `<div class="empty">No products match. ${
+            r.status >= 400
+              ? 'The API returned ' + r.status + ' — check the response panel below.'
+              : 'Try widening the filters.'
+          }</div>`;
+          if (r.status >= 400) renderSingle(r);
+          return;
+        }
+
+        holder.innerHTML = '';
+        const table = el('table');
+        table.innerHTML =
+          '<thead><tr><th>Product</th><th>Brand</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead>';
+        const tb = el('tbody');
+        cat.rows.forEach((p) => {
+          const tr = el('tr');
+          tr.appendChild(
+            el(
+              'td',
+              null,
+              `${esc(p.name)}<br><span style="color:var(--dim);font-family:var(--mono);font-size:11px">${esc(p.sku)}</span>`,
+            ),
+          );
+          tr.appendChild(el('td', null, esc(p.brand)));
+          tr.appendChild(el('td', null, esc(p.category)));
+          tr.appendChild(el('td', 'num', esc(p.priceFormatted ?? inr(p.price.amount))));
+          tr.appendChild(
+            el('td', 'num', p.stock === 0 ? '<span class="tag oos">0</span>' : String(p.stock)),
+          );
+          tr.appendChild(el('td', null, `<span class="tag ${p.status}">${p.status}</span>`));
+
+          const acts = el('div', 'acts');
+          const mk = (label, cls, fn) => {
+            const b = el('button', `act ${cls}`, label);
+            b.onclick = fn;
+            return b;
+          };
+          acts.appendChild(mk('Inspect', 'g', () => inspect(p)));
+          acts.appendChild(mk('Edit', 'p', () => handoff(p, 'patch')));
+          acts.appendChild(mk('Archive', 'd', () => handoff(p, 'archive')));
+          acts.appendChild(
+            mk('Copy id', '', async () => {
+              await navigator.clipboard.writeText(p.id);
+              toast('id copied');
+            }),
+          );
+          const td = el('td');
+          td.appendChild(acts);
+          tr.appendChild(td);
+          tb.appendChild(tr);
+        });
+        table.appendChild(tb);
+        holder.appendChild(table);
+
+        const pager = el('div', 'pager');
+        const from = cat.offset + 1;
+        const to = cat.offset + cat.rows.length;
+        pager.appendChild(
+          el(
+            'span',
+            null,
+            `<b>${from.toLocaleString()}–${to.toLocaleString()}</b> of <b>${(cat.total ?? 0).toLocaleString()}</b> · ${r.ms} ms · cache <b>${r.cache ?? 'direct'}</b>`,
+          ),
+        );
+        const prev = el('button', 'mini', '← Previous');
+        prev.disabled = cat.offset === 0;
+        prev.onclick = () => {
+          cat.offset = Math.max(0, cat.offset - cat.limit);
+          showCatalog();
+        };
+        const next = el('button', 'mini', 'Next →');
+        next.disabled = !r.json?.page?.hasMore;
+        next.onclick = () => {
+          cat.offset += cat.limit;
+          showCatalog();
+        };
+        pager.appendChild(prev);
+        pager.appendChild(next);
+        const deep = el('button', 'mini', 'Jump to offset 100,000');
+        deep.onclick = () => {
+          cat.offset = 100000;
+          showCatalog();
+        };
+        pager.appendChild(deep);
+
+        const fresh = el(
+          'button',
+          'mini',
+          cat.alwaysFresh ? 'Fresh reads: on' : 'Fresh reads: off',
+        );
+        fresh.title = 'Send Cache-Control: no-cache on every read, bypassing the proxy cache';
+        fresh.onclick = () => {
+          cat.alwaysFresh = !cat.alwaysFresh;
+          showCatalog();
+        };
+        pager.appendChild(fresh);
+        holder.appendChild(pager);
+
+        renderSingle(r, 'This is the exact response backing the table above.');
+      }
+
+      /**
+       * Reads that feed a conditional write must not come from a cache.
+       *
+       * These originally used a plain GET, which nginx happily served from cache —
+       * so the ETag handed to PATCH could be one version behind and the write came
+       * back 412. The cache was working exactly as configured; the mistake was
+       * treating a cacheable read as authoritative. Anything used as a
+       * precondition has to bypass it.
+       */
+      const FRESH = { 'cache-control': 'no-cache' };
+
+      async function inspect(p) {
+        const r = await call('GET', `/api/v1/products/${p.id}`, { headers: FRESH });
+        renderSingle(
+          r,
+          `Full record for <b>${esc(p.name)}</b>, read with <code>Cache-Control: no-cache</code> so the <code>ETag</code> is current. That ETag is what a write must send back as <code>If-Match</code> — a cached one would be stale and the write would correctly fail with a 412.`,
+        );
+      }
+
+      /** Loads a product into a write request, with a current ETag, so no 428 or 412. */
+      async function handoff(p, endpointId) {
+        const cur = await call('GET', `/api/v1/products/${p.id}`, { headers: FRESH });
+        if (!cur.etag) {
+          toast('Could not read a current ETag');
+          return;
+        }
+        openEndpoint(
+          ENDPOINTS.find((e) => e.id === endpointId),
+          { ':id': p.id, 'If-Match': cur.etag },
+        );
+        toast(`Loaded ${p.sku} with its current ETag`);
+      }
+
+      // ============================ ENDPOINTS ============================
+      const ENDPOINTS = [
+        {
+          id: 'list',
+          method: 'GET',
+          label: 'List & filter products',
+          path: '/api/v1/products',
+          why: "<b>The primary read path.</b> Category plus a price range is exactly what the composite index <code>(category, price_minor, id) WHERE status='active'</code> serves — equality column first, range second, so it is a sorted index range scan with no sort step.",
+          fields: [
+            {
+              name: 'category',
+              options: 'facets',
+              hint: 'Comma-separated. Multiple values are ORed.',
+            },
+            { name: 'brand', options: BRANDS, hint: 'Nike, Jordan or Converse.' },
+            { name: 'minPrice', value: '500000', hint: '<b>Minor units.</b> 500000 = ₹5,000.' },
+            { name: 'maxPrice', value: '1500000', hint: '<b>Minor units.</b> Inclusive bound.' },
+            { name: 'sort', options: SORTS, value: 'price:asc', hint: 'field:direction.' },
+            {
+              name: 'status',
+              options: STATUSES,
+              hint: 'Defaults to active, so drafts never leak.',
+            },
+            { name: 'inStockOnly', options: ['true', 'false'], hint: 'Restricts to stock > 0.' },
+            { name: 'q', hint: 'Full text over name, brand, category, description.' },
+            { name: 'limit', value: '10', hint: 'Clamped to 100 rather than rejected.' },
+            { name: 'offset', hint: 'Cannot be combined with cursor — that is a 400.' },
+            { name: 'cursor', hint: 'Keyset paging. Take page.nextCursor from a response.' },
+            {
+              name: 'withTotal',
+              options: ['true', 'false'],
+              hint: 'COUNT(*) is opt-out; it is the costliest part.',
+            },
+          ],
+        },
+        {
+          id: 'facets',
+          method: 'GET',
+          label: 'Category counts',
+          path: '/api/v1/products/facets',
+          why: 'Powers a filter sidebar, and is what populates the dropdowns on this page. <b>Deliberately separate</b> from the listing: counting every category visits every matching row (~81 ms here), so a normal read should not pay for it.',
+          fields: [{ name: 'brand', options: BRANDS, hint: 'Optional — narrows the counts.' }],
+        },
+        {
+          id: 'bysku',
+          method: 'GET',
+          label: 'Get by SKU',
+          path: '/api/v1/products/sku/{sku}',
+          why: 'Case-insensitive, matching the unique index on <code>lower(sku)</code>, so it stays an index lookup.',
+          fields: [
+            { name: ':sku', hint: 'Pick any SKU from the Catalog tab, or use Copy id there.' },
+          ],
+        },
+        {
+          id: 'byid',
+          method: 'GET',
+          label: 'Get by id',
+          path: '/api/v1/products/{id}',
+          why: 'Returns an <code>ETag</code>. Send it back as <code>If-None-Match</code> and you get a <b>304</b> with no body — the row is read, nothing is transferred.',
+          fields: [
+            {
+              name: ':id',
+              hint: 'Use <b>Inspect</b> on any Catalog row to fill this automatically.',
+            },
+            { name: 'If-None-Match', header: true, hint: 'Paste an ETag to force the 304.' },
+          ],
+        },
+        {
+          id: 'create',
+          method: 'POST',
+          label: 'Create a product',
+          path: '/api/v1/products',
+          why: '201 with <code>Location</code> and <code>ETag</code>. <b>Status defaults to draft</b> — a POST does not publish. Change <code>amount</code> to 1299.99 and it is rejected: money is integer minor units, never a float.',
+          body: {
+            sku: 'DEMO-CONSOLE-001',
+            name: "Nike Air Zoom Pegasus 41 'Console Demo'",
+            description: 'Created from the live console.',
+            brand: 'Nike',
+            category: 'Running',
+            price: { amount: 1299900, currency: 'INR' },
+            stock: 12,
+            status: 'active',
+          },
+        },
+        {
+          id: 'patch',
+          method: 'PATCH',
+          label: 'Update a product',
+          path: '/api/v1/products/{id}',
+          why: '<b><code>If-Match</code> is required, not optional.</b> Missing → 428, stale → 412. Optional would make last-write-wins the silent default, so one editor erases another with no error anywhere.',
+          fields: [
+            {
+              name: ':id',
+              hint: 'Use <b>Edit</b> on a Catalog row — it fills id and ETag together.',
+            },
+            { name: 'If-Match', header: true, hint: 'Current ETag. Clear it to see the 428.' },
+          ],
+          body: { stock: 4 },
+        },
+        {
+          id: 'archive',
+          method: 'DELETE',
+          label: 'Archive a product',
+          path: '/api/v1/products/{id}',
+          why: 'A <b>soft delete</b> — status becomes <code>archived</code>. Order history references catalog rows, so deleting would orphan it. Returns 200 with the archived product, not 204, because there is still a representation to return.',
+          fields: [
+            { name: ':id', hint: 'Use <b>Archive</b> on a Catalog row.' },
+            { name: 'If-Match', header: true, hint: 'Required, same as PATCH.' },
+          ],
+        },
+        {
+          id: 'ready',
+          method: 'GET',
+          label: 'Readiness',
+          path: '/ready',
+          why: 'Runs a real query, so it says whether this instance can serve traffic. <code>/health</code> deliberately does not touch the database — a liveness probe that fails on a database blip gets the container killed mid-outage.',
+          fields: [],
+        },
+      ];
+
+      let current = null;
+
+      function openEndpoint(ep, prefill = {}) {
+        current = ep;
+        markActive(ep.label);
+        $('title').textContent = ep.label;
+        $('blurb').innerHTML =
+          `<code>${ep.method} ${esc(ep.path)}</code> — every field below is documented inline, and enumerated values are dropdowns so there is nothing to guess.`;
+
+        const panel = $('panel');
+        panel.innerHTML = '';
+        const box = el('div', 'box');
+        const head = el('div', 'box__head');
+        head.appendChild(el('span', `req__verb verb ${ep.method}`, ep.method));
+        const url = el('div', 'req__url');
+        url.id = 'urlbar';
+        head.appendChild(url);
+        const curlBtn = el('button', 'mini', 'Copy cURL');
+        curlBtn.onclick = async () => {
+          const { path, headers, body } = buildRequest();
+          await navigator.clipboard.writeText(curlFor(ep.method, path, headers, body));
+          toast('cURL copied');
+        };
+        head.appendChild(curlBtn);
+        const send = el('button', 'send', 'Send');
+        send.id = 'send';
+        head.appendChild(send);
+        box.appendChild(head);
+        box.appendChild(el('div', 'why', ep.why));
+
+        const fields = el('div', 'fields');
+        (ep.fields ?? []).forEach((f) => {
+          const row = el('div', 'field');
+          row.appendChild(el('label', null, f.name));
+          const right = el('div');
+          let input;
+          const opts = f.options === 'facets' ? (facets ?? []).map((c) => c.value) : f.options;
+          if (opts) {
+            input = el('select');
+            input.appendChild(el('option', null, '— not sent —'));
+            opts.forEach((o) => {
+              const op = el('option', null, esc(o));
+              op.value = o;
+              input.appendChild(op);
+            });
+          } else {
+            input = el('input');
+            input.placeholder = f.header ? 'header value' : 'query value';
+          }
+          input.value = prefill[f.name] ?? f.value ?? '';
+          input.dataset.name = f.name;
+          if (f.header) input.dataset.header = '1';
+          input.oninput = paintUrl;
+          input.onchange = paintUrl;
+          right.appendChild(input);
+          right.appendChild(el('span', 'hint', f.hint ?? ''));
+          row.appendChild(right);
+          fields.appendChild(row);
+        });
+
+        if (ep.body) {
+          const row = el('div', 'field');
+          row.appendChild(el('label', null, 'body'));
+          const right = el('div');
+          const ta = el('textarea');
+          ta.id = 'bodybox';
+          ta.value = JSON.stringify(ep.body, null, 2);
+          right.appendChild(ta);
+          right.appendChild(
+            el(
+              'span',
+              'hint',
+              'JSON. Unknown fields are <b>rejected</b> — rename one to see the 400.',
+            ),
+          );
+          row.appendChild(right);
+          fields.appendChild(row);
+        }
+        box.appendChild(fields);
+        panel.appendChild(box);
+        send.onclick = sendCurrent;
+        paintUrl();
+      }
+
+      function buildRequest() {
+        let path = current.path;
+        const params = new URLSearchParams();
+        const headers = {};
+        document.querySelectorAll('.fields [data-name]').forEach((i) => {
+          const v = (i.value ?? '').trim();
+          if (!v) return;
+          if (i.dataset.header) headers[i.dataset.name] = v;
+          else if (i.dataset.name.startsWith(':'))
+            path = path.replace(/\{[^}]+\}/, encodeURIComponent(v));
+          else params.set(i.dataset.name, v);
+        });
+        if (['POST', 'PATCH', 'DELETE'].includes(current.method)) headers['x-api-key'] = API_KEY;
+        const box = $('bodybox');
+        const body = box && ['POST', 'PATCH'].includes(current.method) ? box.value : undefined;
+        const qs = params.toString();
+        return { path: path + (qs ? `?${qs}` : ''), headers, body };
+      }
+
+      function paintUrl() {
+        $('urlbar').textContent = location.origin + buildRequest().path;
+      }
+
+      async function sendCurrent() {
+        const { path, headers, body } = buildRequest();
+        if (path.includes('{')) {
+          $('res').innerHTML =
+            '<div class="empty">Fill in the path parameter first — the Catalog tab can do it for you.</div>';
+          return;
+        }
+        const btn = $('send');
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+        const r = await call(current.method, path, { body, headers });
+
+        // A successful write invalidates what the cached listing says, so arm one
+        // bypassing read for the next visit to the Catalog tab.
+        const wrote = ['POST', 'PATCH', 'DELETE'].includes(current.method);
+        if (wrote && r.status >= 200 && r.status < 300) {
+          cat.bustNext = true;
+          const back = el('button', 'mini', '← Back to Catalog (fresh read)');
+          back.style.margin = '0 14px 14px';
+          renderSingle(
+            r,
+            'Write succeeded. The cached listing is now out of date by up to 60 seconds.',
+          );
+          $('res').appendChild(back);
+          back.onclick = () => showCatalog();
+          btn.disabled = false;
+          btn.textContent = 'Send';
+          return;
+        }
+
+        renderSingle(r);
+        btn.disabled = false;
+        btn.textContent = 'Send';
+      }
+
+      function metaRow(r) {
+        const head = el('div', 'res__head');
+        head.appendChild(
+          el('span', `code ${codeClass(r.status)}`, r.status === 0 ? 'ERR' : r.status),
+        );
+        head.appendChild(el('span', null, `<b>${r.ms}</b> ms`));
+        if (r.bytes !== undefined) head.appendChild(el('span', null, `<b>${r.bytes}</b> B`));
+        if (r.cache) head.appendChild(el('span', null, `cache <b>${r.cache}</b>`));
+        if (r.etag) head.appendChild(el('span', null, `etag <b>${esc(r.etag)}</b>`));
+        head.appendChild(
+          el('span', null, `<code style="color:var(--dim)">${r.method} ${esc(r.path)}</code>`),
+        );
+        return head;
+      }
+
+      function renderSingle(r, note) {
+        const res = $('res');
+        res.innerHTML = '';
+        res.appendChild(metaRow(r));
+        if (note) res.appendChild(el('div', 'step__note', note));
+        if (r.error) {
+          res.appendChild(el('div', 'step__note', `Request failed: ${esc(r.error)}`));
+          return;
+        }
+        if (r.status === 304) {
+          res.appendChild(
+            el('div', 'step__note', '304 Not Modified — no body sent. The ETag matched.'),
+          );
+          return;
+        }
+        res.appendChild(el('pre', 'out', r.json ? paint(r.json) : esc(r.text || '(no body)')));
+      }
+
+      // ============================ SCENARIOS ============================
+      const SCENARIOS = [
+        {
+          id: 'primary',
+          label: 'The primary read pattern',
+          card: 'Filter by category and price, sorted and paginated — the query the schema is built around.',
+          async run(log) {
+            const r = await call(
+              'GET',
+              '/api/v1/products?category=Running&minPrice=500000&maxPrice=1500000&sort=price:asc&limit=5&withTotal=true',
+            );
+            log(
+              r,
+              `Matched <b>${r.json?.page?.total?.toLocaleString() ?? '?'}</b> products in <b>${r.ms} ms</b>. Equality on <code>category</code> then a range on <code>price_minor</code> is one sorted index range scan — no sort step, and Postgres reads about as many rows as it returns.`,
+            );
+            log(
+              null,
+              'The <code>query</code> block echoes how the server <b>actually interpreted</b> the request after defaults and clamps, so a client can confirm its filter was applied rather than assuming a 200 means what it hoped.',
+            );
+          },
+        },
+        {
+          id: 'deep',
+          label: 'Deep pagination: offset vs cursor',
+          card: 'Jump 100,000 rows in, two ways. One walks and discards; the other seeks.',
+          async run(log) {
+            const a = await call(
+              'GET',
+              '/api/v1/products?limit=1&offset=100000&sort=price:asc&withTotal=false',
+            );
+            log(
+              a,
+              `<b>OFFSET 100000</b> took <b>${a.ms} ms</b> — Postgres walks and discards 100,000 index entries before returning anything, so cost grows with depth.`,
+            );
+            const cursor = a.json?.page?.nextCursor;
+            if (!cursor) return log(null, 'No cursor returned; cannot continue.');
+            const b = await call(
+              'GET',
+              `/api/v1/products?limit=20&sort=price:asc&cursor=${encodeURIComponent(cursor)}`,
+            );
+            const f = a.ms && b.ms ? Math.round((a.ms / b.ms) * 10) / 10 : null;
+            log(
+              b,
+              `The same position by <b>keyset cursor</b>: <b>${b.ms} ms</b>${f ? ` — about <b>${f}×</b> faster` : ''}. The cursor carries the last row's price and id, so the next page is <code>WHERE (price_minor, id) &gt; (…)</code>, a fresh index seek that costs the same at page 1 or page 10,000.`,
+            );
+            log(
+              null,
+              'Keyset also fixes a correctness bug: under offset paging, a product inserted while you are on page 2 shifts everything and an item is silently skipped. Both modes exist because only offset can answer "page 3 of 87".',
+            );
+          },
+        },
+        {
+          id: 'concurrency',
+          label: 'Optimistic concurrency',
+          card: 'Create, then walk 428 → 412 → 200 → archived. Nothing is destroyed.',
+          async run(log) {
+            const sku = `DEMO-${Date.now()}`;
+            const created = await call('POST', '/api/v1/products', {
+              headers: { 'x-api-key': API_KEY },
+              body: {
+                sku,
+                name: "Nike Pegasus 41 'Concurrency Demo'",
+                description: 'Console scenario.',
+                brand: 'Nike',
+                category: 'Running',
+                price: { amount: 1299900, currency: 'INR' },
+                stock: 10,
+                status: 'active',
+              },
+            });
+            log(created, 'Created, with an <b>ETag</b> derived from <code>id:version</code>.');
+            const id = created.json?.data?.id;
+            if (!id) return;
+            const missing = await call('PATCH', `/api/v1/products/${id}`, {
+              headers: { 'x-api-key': API_KEY },
+              body: { stock: 3 },
+            });
+            log(
+              missing,
+              '<b>428 Precondition Required</b> — no <code>If-Match</code>. The header is mandatory, so a caller cannot accidentally get last-write-wins.',
+            );
+            const stale = await call('PATCH', `/api/v1/products/${id}`, {
+              headers: { 'x-api-key': API_KEY, 'if-match': '"deadbeefdeadbeefdead"' },
+              body: { stock: 3 },
+            });
+            log(
+              stale,
+              '<b>412 Precondition Failed</b> — stale ETag, meaning someone else changed it since you read. Re-read and reapply.',
+            );
+            const ok = await call('PATCH', `/api/v1/products/${id}`, {
+              headers: { 'x-api-key': API_KEY, 'if-match': created.etag },
+              body: { stock: 3 },
+            });
+            log(
+              ok,
+              `<b>200</b>, version now ${ok.json?.data?.version ?? 2}. The check and write are one statement — <code>WHERE id = ? AND version = ?</code> with <code>version = version + 1</code> — so two concurrent updates cannot both win.`,
+            );
+            const gone = await call('DELETE', `/api/v1/products/${id}`, {
+              headers: { 'x-api-key': API_KEY, 'if-match': ok.etag },
+            });
+            log(
+              gone,
+              `Archived, not deleted: status <b>${gone.json?.data?.status ?? 'archived'}</b>. Still retrievable by id so an old order resolves, but gone from listings.`,
+            );
+          },
+        },
+        {
+          id: 'validation',
+          label: 'Validation that fails loudly',
+          card: 'A mistyped filter, an inverted range, a fractional price — each rejected.',
+          async run(log) {
+            const typo = await call('GET', '/api/v1/products?categoy=Running');
+            log(
+              typo,
+              '<code>categoy</code> returns <b>400</b> naming the parameter. Ignoring unknown input would hand this client the <b>entire unfiltered catalog</b> while it believed it had filtered.',
+            );
+            const inv = await call('GET', '/api/v1/products?minPrice=900000&maxPrice=100000');
+            log(
+              inv,
+              'An inverted range is a client bug, so <b>400</b> — not an empty list that reads as "no products found".',
+            );
+            const frac = await call('POST', '/api/v1/products', {
+              headers: { 'x-api-key': API_KEY },
+              body: {
+                sku: `BAD-${Date.now()}`,
+                name: 'Fractional',
+                description: 'x',
+                brand: 'Nike',
+                category: 'Running',
+                price: { amount: 1299.99, currency: 'INR' },
+                stock: 1,
+              },
+            });
+            log(
+              frac,
+              '<b>Money is an integer count of minor units.</b> 1299.99 is rejected at the boundary. Floats cannot represent most decimal fractions, so ₹1,499.95 × 7 and the same added seven times disagree — a bug that surfaces in accounting, not in a test.',
+            );
+          },
+        },
+        {
+          id: 'cache',
+          label: 'Caching, which is the real answer',
+          card: 'Same request twice. MISS becomes HIT — reads never reaching the database is the point.',
+          async run(log) {
+            const url = `/api/v1/products?category=Basketball&limit=10&sort=price:desc&_=${Date.now()}`;
+            const a = await call('GET', url);
+            log(
+              a,
+              `First: <code>X-Cache-Status: <b>${a.cache ?? 'n/a'}</b></code> in <b>${a.ms} ms</b> — it reached Node and Postgres.`,
+            );
+            const b = await call('GET', url);
+            log(
+              b,
+              `Second: <code>X-Cache-Status: <b>${b.cache ?? 'n/a'}</b></code> in <b>${b.ms} ms</b> — served by nginx without waking the application. With reads vastly outnumbering writes this is the highest-leverage thing in the system, and <code>${esc(a.cc ?? 'Cache-Control')}</code> lets a CDN do the same at the edge.`,
+            );
+            log(
+              null,
+              '<code>proxy_cache_lock</code> is on, so when an entry expires <b>one</b> request refills it while the rest wait, instead of all stampeding the origin.',
+            );
+          },
+        },
+      ];
+
+      async function runScenario(sc) {
+        current = null;
+        markActive(sc.label);
+        $('title').textContent = sc.label;
+        $('blurb').textContent = sc.card;
+        $('panel').innerHTML = '';
+        const res = $('res');
+        res.innerHTML = '<div class="empty">Running…</div>';
+        let first = true;
+        const log = (r, note) => {
+          if (first) {
+            res.innerHTML = '';
+            first = false;
+          }
+          const step = el('div', 'step');
+          if (r) step.appendChild(metaRow(r));
+          if (note) step.appendChild(el('div', 'step__note', note));
+          if (r?.json) {
+            const pre = el('pre', 'out', paint(r.json));
+            pre.style.maxHeight = '200px';
+            step.appendChild(pre);
+          }
+          res.appendChild(step);
+        };
+        try {
+          await sc.run(log);
+          // The concurrency scenario writes, so the cached listing is stale after it.
+          if (sc.id === 'concurrency') cat.bustNext = true;
+        } catch (e) {
+          log(null, `Scenario failed: ${esc(e.message)}`);
+        }
+      }
+
+      // ============================ NAV ============================
+      function markActive(label) {
+        document
+          .querySelectorAll('.item')
+          .forEach((n) => n.classList.toggle('on', n.dataset.label === label));
+      }
+      function navButton(container, verb, label, onClick) {
+        const b = el('button', 'item');
+        b.dataset.label = label;
+        b.innerHTML = `<span class="verb ${verb}">${verb}</span><small>${esc(label)}</small>`;
+        b.onclick = onClick;
+        container.appendChild(b);
+        return b;
+      }
+
+      navButton($('nav-browse'), 'VIEW', 'Catalog', () => showCatalog(true));
+      SCENARIOS.forEach((sc) =>
+        navButton($('nav-scenarios'), 'RUN', sc.label, () => runScenario(sc)),
+      );
+      ENDPOINTS.forEach((ep) =>
+        navButton($('nav-endpoints'), ep.method, ep.label, () => openEndpoint(ep)),
+      );
+
+      // ============================ KEY ============================
+      let shown = false;
+      $('key-show').onclick = () => {
+        shown = !shown;
+        $('key').textContent = shown ? API_KEY : MASK;
+        $('key-show').textContent = shown ? 'Hide' : 'Reveal';
+      };
+      $('key-copy').onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(API_KEY);
+          toast('API key copied');
+        } catch {
+          toast('Copy failed');
+        }
+      };
+
+      // ============================ BOOT ============================
+      (async () => {
+        try {
+          const ready = await call('GET', '/ready');
+          if (ready.json?.status === 'ready') {
+            $('led').className = 'led up';
+            $('s-count').textContent = Number(ready.json.products).toLocaleString();
+          } else $('led').className = 'led down';
+          const times = [];
+          for (let i = 0; i < 3; i += 1) {
+            const r = await call('GET', '/api/v1/products?category=Running&limit=5');
+            times.push(r.ms);
+            $('s-cache').textContent = r.cache ?? 'direct';
+          }
+          times.sort((a, b) => a - b);
+          $('s-lat').textContent = times[1] + ' ms';
+        } catch {
+          $('led').className = 'led down';
+        }
+      })();
+
+      showCatalog();
+    </script>
+  </body>
+</html>

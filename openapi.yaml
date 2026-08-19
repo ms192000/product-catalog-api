@@ -1,0 +1,729 @@
+openapi: 3.0.3
+
+# Hand-written rather than generated. The Zod schemas are the runtime authority,
+# so this file is documentation of that contract — not a second implementation of
+# it. Where the two could drift, the schemas win, and the smoke suite is what
+# checks the live service still behaves as described here.
+
+info:
+  title: Product Catalog API
+  version: '1.0.0'
+  description: |
+    REST API for an e-commerce product catalog: create, retrieve, update and
+    delete products, and list them with category and price filters plus
+    pagination.
+
+    Sized for the workload it was built against — a few hundred thousand
+    products, reads vastly outnumbering writes. The live instance holds 200,000
+    products.
+
+    ## Things worth knowing before you call it
+
+    **Prices are integers in minor units.** `129900` means ₹1,299.00. Floating
+    point cannot represent most decimal fractions exactly, so a fractional
+    `amount` is rejected with a 400 rather than silently truncated. Responses
+    also carry a preformatted `priceFormatted` for display.
+
+    **Unknown fields and unknown query parameters are rejected.** `?categoy=Running`
+    returns 400 naming the parameter. Ignoring unrecognised input would mean a
+    client receives the entire unfiltered catalog while believing it filtered.
+
+    **Two pagination modes.** `offset` for page numbers, `cursor` (keyset) for
+    deep or continuous scrolling. Keyset stays flat as you go deeper — measured
+    at 0.33 ms versus 26.72 ms at `OFFSET 100000` — and cannot skip rows when
+    products are inserted mid-scroll. Supply one or the other, never both.
+
+    **Writes require optimistic concurrency.** `PATCH` and `DELETE` require an
+    `If-Match` header carrying the current ETag. Without it you get 428; with a
+    stale one, 412. This is deliberate: if the header were optional, the default
+    behaviour would be last-write-wins, silently discarding a concurrent edit.
+
+    **`status` defaults to `active` on reads**, so drafts and archived products
+    never appear in a public listing because a parameter was omitted. On create,
+    `status` defaults to `draft` — a POST does not publish a product.
+  license:
+    name: MIT
+  contact:
+    name: Source and design notes
+    url: https://github.com/ms192000/product-catalog-api
+
+servers:
+  - url: https://nike-catalog.me
+    description: Live
+  - url: http://localhost:3000
+    description: Local
+
+tags:
+  - name: Products
+    description: Catalog CRUD, filtering and pagination
+  - name: Operations
+    description: Liveness and readiness
+
+paths:
+  /api/v1/products:
+    get:
+      tags: [Products]
+      summary: List and filter products
+      description: |
+        The primary read path. Filtering by `category` plus a `minPrice`/`maxPrice`
+        range is the pattern the composite index
+        `(category, price_minor, id) WHERE status = 'active'` exists to serve, and
+        it resolves in well under a millisecond at 200k rows.
+
+        Responses carry `Cache-Control: public, max-age=60, stale-while-revalidate=30`
+        and are cached by the reverse proxy. Check `X-Cache-Status` for `HIT`/`MISS`.
+      operationId: listProducts
+      parameters:
+        - name: category
+          in: query
+          description: Comma-separated. Multiple values are ORed.
+          schema: { type: string }
+          example: Running,Basketball
+        - name: brand
+          in: query
+          description: Comma-separated. ANDed with other filters.
+          schema: { type: string }
+          example: Nike
+        - name: minPrice
+          in: query
+          description: Inclusive lower bound, in minor units.
+          schema: { type: integer, minimum: 0 }
+          example: 500000
+        - name: maxPrice
+          in: query
+          description: |
+            Inclusive upper bound, in minor units. Must be >= `minPrice`, otherwise
+            400 — an inverted range is a client bug, and an empty list would look
+            like "no products found".
+          schema: { type: integer, minimum: 0 }
+          example: 1500000
+        - name: inStockOnly
+          in: query
+          description: Restrict to `stock > 0`.
+          schema: { type: boolean }
+        - name: q
+          in: query
+          description: |
+            Full-text search across name, brand, category and description, using
+            PostgreSQL `websearch_to_tsquery` — so quoted phrases and `-excluded`
+            work, and invented syntax does not error.
+          schema: { type: string, maxLength: 200 }
+          example: pegasus
+        - name: status
+          in: query
+          description: Comma-separated. Defaults to `active`.
+          schema:
+            type: string
+            example: active
+        - name: sort
+          in: query
+          description: |
+            `field:direction`. `relevance` falls back to newest-first when there is
+            no `q`. `id` is always appended as a final tie-break, without which
+            products sharing a price could repeat or vanish across pages.
+          schema:
+            type: string
+            enum:
+              [
+                price:asc,
+                price:desc,
+                name:asc,
+                name:desc,
+                createdAt:asc,
+                createdAt:desc,
+                relevance:desc,
+              ]
+          example: price:asc
+        - name: limit
+          in: query
+          description: Clamped to the server maximum (100) rather than rejected.
+          schema: { type: integer, minimum: 1, default: 20 }
+        - name: offset
+          in: query
+          description: Offset pagination. Mutually exclusive with `cursor`.
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: cursor
+          in: query
+          description: |
+            Keyset pagination. Pass the `page.nextCursor` from the previous
+            response. Mutually exclusive with `offset`.
+          schema: { type: string }
+        - name: withTotal
+          in: query
+          description: |
+            Whether to compute `page.total`. Defaults to `true` for offset
+            requests and `false` for cursor requests, because `COUNT(*)` over a
+            filtered set is the most expensive part of a listing and a keyset
+            client has no use for it.
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: A page of products
+          headers:
+            Cache-Control:
+              schema: { type: string }
+              example: public, max-age=60, stale-while-revalidate=30
+            X-Cache-Status:
+              description: Reverse-proxy cache result.
+              schema: { type: string, enum: [HIT, MISS, EXPIRED, STALE, BYPASS] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductListResponse' }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+    post:
+      tags: [Products]
+      summary: Create a product
+      description: |
+        Returns 201 with a `Location` header and the `ETag` of the new product.
+
+        `status` defaults to `draft`: creating a product does not put it in front
+        of customers. SKU uniqueness is enforced by a unique index on `lower(sku)`,
+        not by checking first — a check-then-insert has a gap another request can
+        slip through.
+      operationId: createProduct
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProduct' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              schema: { type: string }
+              example: /api/v1/products/6f1c...
+            ETag:
+              schema: { type: string }
+              example: '"a1b2c3d4e5f6:1"'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductResponse' }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: A product with this SKU already exists, compared case-insensitively.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/products/facets:
+    get:
+      tags: [Products]
+      summary: Category counts for the current filters
+      description: |
+        Powers a filter sidebar. Accepts the same filter parameters as the listing.
+
+        Deliberately a separate endpoint rather than part of every listing
+        response: counting each category means visiting every matching row, which
+        measures ~81 ms at 200k products. Most requests should not pay for it. A
+        materialised view is the documented next step.
+      operationId: listFacets
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: brand
+          in: query
+          schema: { type: string }
+        - name: minPrice
+          in: query
+          schema: { type: integer }
+        - name: maxPrice
+          in: query
+          schema: { type: integer }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Category counts, descending
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      categories:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            value: { type: string, example: Lifestyle }
+                            count: { type: integer, example: 19231 }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/products/sku/{sku}:
+    get:
+      tags: [Products]
+      summary: Retrieve a product by SKU
+      description: |
+        Case-insensitive. Matches the unique index on `lower(sku)`, so the lookup
+        uses the index rather than scanning.
+      operationId: getProductBySku
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema: { type: string }
+          example: NIKE-PEGASUS-100042
+      responses:
+        '200':
+          description: The product
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductResponse' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/products/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+
+    get:
+      tags: [Products]
+      summary: Retrieve a product
+      description: |
+        Send `If-None-Match` with a previously returned ETag to get a 304 with no
+        body when the product has not changed.
+
+        Archived products remain retrievable by id, so historical orders can still
+        resolve what was bought. They are excluded from listings.
+      operationId: getProduct
+      parameters:
+        - name: If-None-Match
+          in: header
+          description: Return 304 if the product's ETag matches.
+          schema: { type: string }
+      responses:
+        '200':
+          description: The product
+          headers:
+            ETag:
+              schema: { type: string }
+            Cache-Control:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductResponse' }
+        '304':
+          description: Not modified. No body.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Products]
+      summary: Partially update a product
+      description: |
+        Send only the fields you are changing. An empty body is rejected, because
+        `{}` is almost always a client bug and answering 200 would hide it.
+
+        `sku` cannot be changed — it is an external identifier other systems quote.
+
+        `If-Match` is **required**. The version check and the write are a single
+        statement (`WHERE id = ? AND version = ?` with `version = version + 1`), so
+        two concurrent updates cannot both succeed. `If-Match: *` deliberately
+        overrides the check when a forced overwrite is genuinely wanted.
+
+        There is no `PUT`. A full replace on a resource with server-owned fields
+        (`version`, `createdAt`) invites clients to round-trip and resubmit them,
+        and makes accidental field clearing the default. `PATCH` plus a required
+        `If-Match` expresses the same intent without that hazard.
+      operationId: updateProduct
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: Current ETag, or `*` to overwrite unconditionally.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProduct' }
+      responses:
+        '200':
+          description: Updated. `version` has incremented and the ETag has changed.
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductResponse' }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: SKU conflict.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '412':
+          description: |
+            `If-Match` did not match the current ETag — someone else changed the
+            product since you read it. Re-read and reapply.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '428':
+          description: |
+            `If-Match` was absent. Required rather than optional, so that
+            last-write-wins is never the silent default.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+    delete:
+      tags: [Products]
+      summary: Archive a product
+      description: |
+        A soft delete: `status` becomes `archived`. Catalog rows are referenced by
+        order history and analytics, so removing the row would orphan all of it and
+        a customer's old order could no longer say what it contained.
+
+        Returns 200 with the archived product rather than 204, because there is
+        still a representation to return and the client should see the new state.
+      operationId: archiveProduct
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '412':
+          description: Stale `If-Match`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '428':
+          description: Missing `If-Match`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # Deliberately outside /api/v1. Probes are infrastructure, not application API,
+  # so they must not move when the API is versioned — an orchestrator configured
+  # against /health should not break because the catalog shipped a v2.
+  /health:
+    get:
+      tags: [Operations]
+      summary: Liveness
+      description: |
+        Answers without touching the database, so it reports whether the process is
+        alive rather than whether its dependencies are. A liveness probe that fails
+        on a database blip gets the container killed during an outage, which turns a
+        recoverable problem into a restart loop.
+
+        Never cached by the proxy.
+      operationId: health
+      responses:
+        '200':
+          description: The process is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  uptime: { type: number, description: Seconds since start }
+
+  /ready:
+    get:
+      tags: [Operations]
+      summary: Readiness
+      description: |
+        Runs a real query, so it reports whether this instance can actually serve
+        traffic. This is the one a load balancer should gate on, and the one the
+        deploy script polls before considering a release good.
+
+        Never cached: a cached readiness probe describes a process that may have
+        died since.
+      operationId: ready
+      responses:
+        '200':
+          description: Ready to serve
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ready }
+                  products:
+                    type: integer
+                    description: Row count, which doubles as proof the query path works.
+                    example: 200000
+        '503':
+          description: The database is not answering.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        Required on writes when the server is configured with an API key, which the
+        live instance is. Reads are open.
+
+        A shared key is the honest minimum for a take-home, not a real
+        authorisation model — production needs per-user identity and an audit trail
+        of who changed which price.
+
+  schemas:
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: integer
+          minimum: 0
+          description: |
+            Integer minor units. `129900` is ₹1,299.00. A fractional value is a
+            400 — floats cannot represent decimal fractions exactly, and
+            `1499.95 * 7` disagreeing with `1499.95` added seven times is a bug
+            that surfaces in accounting weeks later rather than in a test.
+          example: 129900
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          description: ISO 4217, uppercased by the server.
+          example: INR
+
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        sku:
+          type: string
+          description: Immutable once created. Unique, compared case-insensitively.
+          example: NIKE-PEGASUS-100042
+        name: { type: string, example: Nike Air Zoom Pegasus 41 }
+        description: { type: string }
+        brand: { type: string, example: Nike }
+        category: { type: string, example: Running }
+        price: { $ref: '#/components/schemas/Money' }
+        priceFormatted:
+          type: string
+          description: Server-rendered for display, so clients need no currency logic.
+          example: ₹1,299.00
+        stock: { type: integer, minimum: 0, example: 42 }
+        inStock:
+          type: boolean
+          description: Derived from `stock > 0`.
+        status:
+          type: string
+          enum: [active, draft, archived]
+        attributes:
+          type: object
+          additionalProperties: true
+          description: |
+            Free-form JSONB for what varies per product. Filtered and sorted
+            fields are real typed columns; only genuinely variable data lives here.
+          example: { colourway: Black/White }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version:
+          type: integer
+          description: Increments on every write. The ETag is derived from it.
+          example: 1
+
+    CreateProduct:
+      type: object
+      additionalProperties: false
+      required: [sku, name, brand, category, price]
+      properties:
+        sku: { type: string, minLength: 1, maxLength: 64, example: NIKE-DEMO-0001 }
+        name: { type: string, minLength: 1, maxLength: 200, example: Nike Air Zoom Pegasus 41 }
+        description: { type: string, maxLength: 5000, default: '' }
+        brand: { type: string, minLength: 1, maxLength: 100, example: Nike }
+        category: { type: string, minLength: 1, maxLength: 100, example: Running }
+        price: { $ref: '#/components/schemas/Money' }
+        stock: { type: integer, minimum: 0, default: 0, example: 25 }
+        status:
+          type: string
+          enum: [active, draft, archived]
+          default: draft
+          description: Defaults to `draft` — creating a product does not publish it.
+        attributes:
+          type: object
+          additionalProperties: true
+          default: {}
+
+    UpdateProduct:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        Every field optional, but at least one is required. `sku` is absent because
+        it is immutable.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, maxLength: 5000 }
+        brand: { type: string, minLength: 1, maxLength: 100 }
+        category: { type: string, minLength: 1, maxLength: 100 }
+        price: { $ref: '#/components/schemas/Money' }
+        stock: { type: integer, minimum: 0, example: 9 }
+        status:
+          type: string
+          enum: [active, draft, archived]
+        attributes:
+          type: object
+          additionalProperties: true
+
+    Page:
+      type: object
+      properties:
+        limit: { type: integer, example: 20 }
+        total:
+          type: integer
+          nullable: true
+          description: Null when not requested. See `withTotal`.
+          example: 19231
+        nextCursor:
+          type: string
+          nullable: true
+          description: Pass as `?cursor=` for the next page. Null on the last page.
+        hasMore:
+          type: boolean
+          description: |
+            Derived by fetching one row beyond the page size, which avoids a second
+            COUNT query just to answer "is there more?".
+
+    ResolvedQuery:
+      type: object
+      description: |
+        How the server actually interpreted the request, after defaults and clamps.
+        Echoed back so a client can confirm its filter was applied rather than
+        assuming a 200 means what it hoped.
+      properties:
+        q: { type: string, nullable: true }
+        filters:
+          type: object
+          properties:
+            category: { type: array, nullable: true, items: { type: string } }
+            brand: { type: array, nullable: true, items: { type: string } }
+            status: { type: array, nullable: true, items: { type: string } }
+            minPrice: { type: integer, nullable: true }
+            maxPrice: { type: integer, nullable: true }
+            inStockOnly: { type: boolean }
+        sort:
+          type: object
+          properties:
+            field: { type: string, example: price }
+            direction: { type: string, enum: [asc, desc] }
+        pagination:
+          type: string
+          enum: [offset, keyset]
+
+    ProductListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Product' }
+        page: { $ref: '#/components/schemas/Page' }
+        query: { $ref: '#/components/schemas/ResolvedQuery' }
+
+    ProductResponse:
+      type: object
+      properties:
+        data: { $ref: '#/components/schemas/Product' }
+
+    Error:
+      type: object
+      description: |
+        One shape for every failure, with a stable machine-readable `code` and a
+        `path` pointing at the offending field.
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum:
+                [
+                  VALIDATION_ERROR,
+                  UNAUTHORIZED,
+                  NOT_FOUND,
+                  CONFLICT,
+                  PRECONDITION_FAILED,
+                  PRECONDITION_REQUIRED,
+                  RATE_LIMITED,
+                  INTERNAL_ERROR,
+                ]
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  path: { type: string, example: price.amount }
+                  message: { type: string }
+
+  responses:
+    ValidationError:
+      description: |
+        Malformed request. Includes unknown fields, unknown query parameters,
+        fractional prices, an unsupported `sort`, an inverted price range, and
+        supplying both `offset` and `cursor`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: VALIDATION_ERROR
+              message: Request validation failed
+              details:
+                - path: price.amount
+                  message: must be an integer number of minor units, e.g. 129900 for ₹1,299.00
+    Unauthorized:
+      description: Missing or invalid `X-API-Key` on a write.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No product with that identifier.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Per-IP rate limit exceeded.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
