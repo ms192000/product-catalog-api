@@ -670,9 +670,52 @@
         opacity: 1;
       }
 
+      /* Narrow screens: the sidebar becomes a horizontal strip rather than being
+         hidden. Hiding it made every scenario and endpoint unreachable on a phone,
+         leaving only the catalog — a reviewer on mobile got a crippled page. */
       @media (max-width: 900px) {
+        .shell {
+          flex-direction: column;
+        }
         .side {
+          width: 100%;
+          display: flex;
+          gap: 6px;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+          padding: 9px 12px;
+        }
+        /* Group headings do not work in a single row; the method badge on each
+           item already says what kind of thing it is. */
+        .side h4 {
           display: none;
+        }
+        #nav-browse,
+        #nav-scenarios,
+        #nav-endpoints {
+          display: flex;
+          gap: 6px;
+        }
+        .item {
+          width: auto;
+          white-space: nowrap;
+          border-left: 0;
+          border-bottom: 2px solid transparent;
+          border-radius: 6px;
+          background: var(--panel-2);
+          padding: 7px 11px;
+        }
+        .item.on {
+          border-left: 0;
+          border-bottom-color: var(--accent);
+        }
+        .verb {
+          width: auto;
+        }
+        .main {
+          padding: 16px 14px 40px;
         }
         .field {
           grid-template-columns: 1fr;
@@ -682,6 +725,13 @@
         }
         table {
           font-size: 11.5px;
+        }
+        /* The table is the one thing that genuinely cannot fit; let it scroll
+           rather than squeezing columns into unreadability. */
+        .box table {
+          display: block;
+          overflow-x: auto;
+          white-space: nowrap;
         }
       }
     </style>
@@ -924,6 +974,18 @@
         await loadFacets();
         const panel = $('panel');
         panel.innerHTML = '';
+
+        // Scenario shortcuts on the landing view. Without these the only route to
+        // them is the sidebar, which is easy to skip past — and the scenarios are
+        // where the design decisions are actually demonstrated.
+        const cards = el('div', 'cards');
+        SCENARIOS.slice(0, 4).forEach((sc) => {
+          const c = el('button', 'card');
+          c.innerHTML = `<b>${esc(sc.label)}</b><span>${esc(sc.card)}</span><span class="run">Run this →</span>`;
+          c.onclick = () => runScenario(sc);
+          cards.appendChild(c);
+        });
+        panel.appendChild(cards);
 
         const box = el('div', 'box');
         const head = el('div', 'box__head');
